@@ -1,0 +1,328 @@
+{
+  "master": {
+    "tasks": [
+      {
+        "id": 1,
+        "title": "Implement Connection Reuse for Serper API",
+        "description": "Modify the Serper API client to reuse connections across multiple vertical searches to reduce connection overhead and latency.",
+        "details": "1. Refactor the Serper API client to maintain a connection pool\n2. Implement session management for HTTP requests\n3. Ensure proper connection cleanup to prevent leaks\n4. Add connection timeout and retry logic\n5. Update the vertical search methods to use the connection pool\n\nPseudo-code:\n```python\nfrom requests.adapters import HTTPAdapter\nfrom requests.sessions import Session\n\nclass SerperClient:\n    def __init__(self, api_key):\n        self.api_key = api_key\n        self.session = Session()\n        adapter = HTTPAdapter(pool_connections=10, pool_maxsize=10, max_retries=3)\n        self.session.mount('https://', adapter)\n        \n    def search(self, vertical, query, location=None):\n        # Use self.session instead of creating new requests each time\n        headers = {'X-API-KEY': self.api_key, 'Content-Type': 'application/json'}\n        response = self.session.post(\n            'https://api.serper.dev/search',\n            json={'q': query, 'gl': 'us', 'hl': 'en', 'type': vertical, 'location': location},\n            headers=headers\n        )\n        return response.json()\n        \n    def __del__(self):\n        # Clean up session when object is destroyed\n        self.session.close()\n```",
+        "testStrategy": "1. Measure API response times before and after implementation\n2. Verify connection reuse with network monitoring tools\n3. Test with concurrent requests to ensure thread safety\n4. Validate that connections are properly closed\n5. Compare latency metrics with baseline to confirm 40-60% improvement target",
+        "priority": "high",
+        "dependencies": [],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Create Session Management for HTTP Requests",
+            "description": "Implement a session object in the SerperClient class that can be reused across multiple requests, replacing individual request calls with session-based calls.",
+            "dependencies": [],
+            "details": "Import the necessary modules (requests.adapters.HTTPAdapter and requests.sessions.Session). Modify the SerperClient constructor to initialize a session object with appropriate connection pooling parameters. Configure the session with an HTTPAdapter that specifies pool_connections, pool_maxsize, and max_retries. Mount the adapter to the https protocol.",
+            "status": "done",
+            "testStrategy": "Verify session initialization by inspecting the SerperClient object. Test that the session object is properly configured with the expected adapter settings. Use network monitoring tools to confirm that connections are being established correctly."
+          },
+          {
+            "id": 2,
+            "title": "Refactor Search Methods to Use Session",
+            "description": "Update all search-related methods to use the persistent session object instead of creating new connections for each request.",
+            "dependencies": [],
+            "details": "Modify the search method to use self.session.post() instead of requests.post(). Ensure all vertical search methods (web, images, news, etc.) are updated to use the session. Maintain the same headers and request parameters but route them through the session object. Update any error handling to account for session-specific exceptions.",
+            "status": "done",
+            "testStrategy": "Compare response times before and after implementation to verify performance improvement. Test multiple sequential searches to confirm connection reuse. Verify that response data structure remains unchanged despite the connection handling changes."
+          },
+          {
+            "id": 3,
+            "title": "Implement Connection Timeout and Retry Logic",
+            "description": "Add robust timeout settings and retry mechanisms to handle transient network issues gracefully.",
+            "dependencies": [],
+            "details": "Configure the HTTPAdapter with appropriate timeout settings (connect and read timeouts). Implement exponential backoff retry logic for failed requests. Add a retry_strategy parameter to allow customization of retry behavior. Handle specific exception types (ConnectionError, Timeout, etc.) with appropriate retry logic. Log retry attempts for debugging purposes.",
+            "status": "done",
+            "testStrategy": "Simulate network failures to verify retry behavior. Test with various timeout values to ensure proper handling. Verify that the correct number of retries occurs before failing. Measure the impact of retry logic on overall reliability."
+          },
+          {
+            "id": 4,
+            "title": "Ensure Proper Connection Cleanup",
+            "description": "Implement proper resource management to prevent connection leaks, including explicit cleanup methods and context manager support.",
+            "dependencies": [],
+            "details": "Implement a close() method to explicitly close the session. Override the __del__ method to ensure the session is closed when the client is garbage collected. Add context manager support (__enter__ and __exit__ methods) to allow using the client in 'with' statements. Implement proper error handling during cleanup to prevent exceptions from being suppressed.",
+            "status": "done",
+            "testStrategy": "Verify that connections are properly closed after use by monitoring active connections. Test the client in various scenarios (normal usage, exceptions, context manager) to ensure cleanup occurs. Check for memory leaks by creating and destroying multiple client instances."
+          },
+          {
+            "id": 5,
+            "title": "Update _execute_batch_request Method for Connection Reuse",
+            "description": "Refactor the _execute_batch_request method to leverage the persistent connection pool when processing multiple search requests in a batch.",
+            "dependencies": [],
+            "details": "Modify the _execute_batch_request method to use the session object for all requests. Implement concurrent request handling while maintaining connection pooling benefits. Ensure proper error handling for batch requests. Add optional parameters for controlling batch behavior (max_concurrent_requests, request_delay). Update any batch-specific timeout or retry logic to be consistent with single request handling.",
+            "status": "done",
+            "testStrategy": "Measure batch request performance before and after implementation. Test with various batch sizes to verify scaling behavior. Compare connection statistics to confirm reuse across batch items. Verify that all batch items are processed correctly despite the connection handling changes."
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "title": "Implement True Batch Processing for Serper API",
+        "description": "Enhance the _execute_batch_request() function to process multiple search requests in a single API call, reducing the number of separate connections needed.",
+        "details": "1. Analyze the current _execute_batch_request() implementation\n2. Modify the function to collect multiple search requests and send them as a single batch\n3. Implement request batching logic with configurable batch size\n4. Add proper error handling for batch responses\n5. Ensure backward compatibility with existing API calls\n\nPseudo-code:\n```python\ndef _execute_batch_request(requests, batch_size=5):\n    \"\"\"Execute multiple search requests in batches to reduce API calls\"\"\"\n    results = []\n    for i in range(0, len(requests), batch_size):\n        batch = requests[i:i+batch_size]\n        # Prepare batch payload\n        batch_payload = {\n            'batch': [\n                {'q': req['query'], 'gl': 'us', 'hl': 'en', \n                 'type': req['vertical'], 'location': req.get('location')}\n                for req in batch\n            ]\n        }\n        # Execute batch request\n        response = session.post(\n            'https://api.serper.dev/batch',\n            json=batch_payload,\n            headers=headers\n        )\n        batch_results = response.json()\n        # Process batch results\n        for j, result in enumerate(batch_results['batch']):\n            results.append({\n                'request': batch[j],\n                'response': result\n            })\n    return results\n```",
+        "testStrategy": "1. Create test cases with varying batch sizes\n2. Compare API call counts before and after implementation\n3. Verify all search results are correctly returned\n4. Test error handling with intentionally invalid requests\n5. Measure performance improvements against the 40-60% target",
+        "priority": "high",
+        "dependencies": [
+          1
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 3,
+        "title": "Implement In-Memory Search Result Caching",
+        "description": "Create a caching system for search results to avoid redundant API calls, with a TTL of 1-2 hours and cache keys based on search parameters.",
+        "details": "1. Design a cache key generation function using hash of vertical + location + zoom + page\n2. Implement an in-memory cache with TTL support\n3. Integrate with the search pipeline to check cache before API calls\n4. Add cache hit/miss metrics logging\n5. Ensure thread-safety for concurrent access\n\nPseudo-code:\n```python\nfrom functools import lru_cache\nimport hashlib\nimport time\n\nclass SearchCache:\n    def __init__(self, ttl_seconds=3600):  # 1 hour default TTL\n        self.cache = {}\n        self.ttl_seconds = ttl_seconds\n        \n    def _generate_key(self, vertical, location, zoom, page):\n        # Create a deterministic hash from search parameters\n        key_str = f\"{vertical}:{location}:{zoom}:{page}\"\n        return hashlib.md5(key_str.encode()).hexdigest()\n        \n    def get(self, vertical, location, zoom, page):\n        key = self._generate_key(vertical, location, zoom, page)\n        cache_entry = self.cache.get(key)\n        \n        if cache_entry is None:\n            return None  # Cache miss\n            \n        timestamp, data = cache_entry\n        if time.time() - timestamp > self.ttl_seconds:\n            # Entry expired\n            del self.cache[key]\n            return None\n            \n        return data  # Cache hit\n        \n    def set(self, vertical, location, zoom, page, data):\n        key = self._generate_key(vertical, location, zoom, page)\n        self.cache[key] = (time.time(), data)\n        \n    def clear(self):\n        self.cache.clear()\n```",
+        "testStrategy": "1. Unit test cache key generation for consistency\n2. Test cache hit/miss scenarios with various search parameters\n3. Verify TTL functionality with time-based tests\n4. Measure memory usage under various cache sizes\n5. Validate cache hit rate meets 70-80% target after warm-up period",
+        "priority": "high",
+        "dependencies": [],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Implement Cache Key Generation Function",
+            "description": "Create a deterministic hash function that generates unique cache keys based on search parameters (vertical, location, zoom, page).",
+            "dependencies": [],
+            "details": "Create a method that takes search parameters and produces a consistent hash. Use MD5 or similar hashing algorithm to generate a fixed-length string from the concatenated parameters. Format the key as 'vertical:location:zoom:page' before hashing. Ensure the function handles different data types appropriately by converting them to strings.",
+            "status": "done",
+            "testStrategy": "Test with various combinations of search parameters to ensure consistent key generation. Verify that similar but different parameters produce different keys. Test edge cases like empty values or special characters."
+          },
+          {
+            "id": 2,
+            "title": "Implement In-Memory Cache with TTL Support",
+            "description": "Create a cache data structure that stores search results with timestamps for TTL-based expiration.",
+            "dependencies": [
+              "3.1"
+            ],
+            "details": "Implement a cache class with a dictionary to store data. Each cache entry should store both the result data and a timestamp. Include methods for setting cache entries with current timestamp, retrieving entries with TTL validation, and clearing expired entries. Use the key generation function from subtask 3.1 to create keys. Implement automatic removal of expired entries during retrieval operations.",
+            "status": "done",
+            "testStrategy": "Test cache storage and retrieval with various TTL values. Verify that expired entries are properly identified and removed. Test edge cases like immediate expiration or very long TTL values."
+          },
+          {
+            "id": 3,
+            "title": "Integrate Cache with Search Pipeline",
+            "description": "Modify the search pipeline to check the cache before making API calls and update the cache with new results.",
+            "dependencies": [
+              "3.2"
+            ],
+            "details": "Update the search function to first check the cache using the generated key. If a valid cache entry exists, return it immediately. If not, proceed with the API call and store the results in the cache before returning. Implement proper error handling to ensure API failures don't affect the caching mechanism. Add a configuration option to disable caching if needed.",
+            "status": "done",
+            "testStrategy": "Test the complete search flow with caching enabled. Verify that repeated identical searches use cached results. Test cache misses to ensure proper API calls are made. Verify that new results correctly update the cache."
+          },
+          {
+            "id": 4,
+            "title": "Implement Thread-Safety and Metrics Logging",
+            "description": "Make the cache thread-safe for concurrent access and add logging for cache hit/miss metrics.",
+            "dependencies": [
+              "3.3"
+            ],
+            "details": "Add thread synchronization mechanisms (like locks or thread-safe data structures) to prevent race conditions during cache access. Implement counters for cache hits, misses, and expirations. Add logging statements at appropriate points to record these metrics. Create a method to retrieve cache statistics for monitoring purposes. Consider implementing periodic cache cleanup to prevent memory leaks.",
+            "status": "done",
+            "testStrategy": "Test concurrent access to the cache with multiple threads. Verify that no data corruption occurs under heavy load. Validate that metrics are correctly incremented for different cache scenarios. Test the memory usage under various cache sizes and access patterns."
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "title": "Integrate Cache with ValidationCache System",
+        "description": "Connect the new search result cache with the existing ValidationCache system to ensure coherent caching across the application.",
+        "details": "1. Analyze the existing ValidationCache implementation\n2. Design integration points between search cache and validation cache\n3. Implement cache invalidation synchronization\n4. Ensure consistent TTL policies across cache systems\n5. Add cache statistics collection for monitoring\n\nPseudo-code:\n```python\nclass IntegratedCacheManager:\n    def __init__(self, search_cache, validation_cache):\n        self.search_cache = search_cache\n        self.validation_cache = validation_cache\n        self.stats = {\n            'search_hits': 0,\n            'search_misses': 0,\n            'validation_hits': 0,\n            'validation_misses': 0\n        }\n        \n    def get_search_results(self, vertical, location, zoom, page):\n        result = self.search_cache.get(vertical, location, zoom, page)\n        if result:\n            self.stats['search_hits'] += 1\n            return result\n        self.stats['search_misses'] += 1\n        return None\n        \n    def set_search_results(self, vertical, location, zoom, page, data):\n        self.search_cache.set(vertical, location, zoom, page, data)\n        \n    def invalidate_location(self, location):\n        # Implement logic to invalidate both caches for a specific location\n        # This ensures consistency between search and validation caches\n        pass\n        \n    def get_cache_stats(self):\n        return self.stats\n```",
+        "testStrategy": "1. Test integration points between search and validation caches\n2. Verify cache invalidation works across both systems\n3. Test cache hit rates in combined scenarios\n4. Validate statistics collection accuracy\n5. Perform end-to-end tests with real search and validation workflows",
+        "priority": "medium",
+        "dependencies": [
+          3
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 5,
+        "title": "Implement Dynamic Location Clustering Thresholds",
+        "description": "Enhance the location clustering algorithm to dynamically adjust thresholds based on business density in the area.",
+        "details": "1. Analyze current clustering implementation\n2. Implement business density calculation function\n3. Create adaptive threshold logic based on density\n4. Adjust overlap thresholds after initial cluster search\n5. Add configuration parameters for min/max thresholds\n\nPseudo-code:\n```python\ndef calculate_business_density(location, radius):\n    \"\"\"Calculate the business density for a given location and radius\"\"\"\n    # Perform initial search to get business count\n    results = search_api.get_business_count(location, radius)\n    area = math.pi * (radius ** 2)  # Area in square units\n    density = results / area\n    return density\n\ndef get_dynamic_clustering_threshold(location):\n    \"\"\"Determine clustering threshold based on business density\"\"\"\n    density = calculate_business_density(location, radius=5000)  # 5km radius\n    \n    # Adjust threshold inversely to density\n    # Higher density = smaller threshold (more clusters)\n    base_threshold = 1000  # meters\n    min_threshold = 200    # minimum cluster size\n    max_threshold = 5000   # maximum cluster size\n    \n    if density > 0:\n        threshold = base_threshold / math.sqrt(density)\n        # Ensure threshold is within bounds\n        threshold = max(min_threshold, min(threshold, max_threshold))\n    else:\n        threshold = max_threshold\n        \n    return threshold\n\ndef adaptive_clustering(location, initial_zoom):\n    \"\"\"Perform adaptive clustering based on business density\"\"\"\n    threshold = get_dynamic_clustering_threshold(location)\n    clusters = create_initial_clusters(location, threshold)\n    \n    # Adjust overlap thresholds after initial search\n    avg_results_per_cluster = calculate_avg_results(clusters)\n    if avg_results_per_cluster > 20:\n        # Reduce overlap if clusters have many results\n        overlap_factor = 0.1  # 10% overlap\n    else:\n        # Increase overlap if clusters have few results\n        overlap_factor = 0.3  # 30% overlap\n        \n    # Apply adjusted overlap\n    final_clusters = adjust_cluster_overlap(clusters, overlap_factor)\n    return final_clusters\n```",
+        "testStrategy": "1. Test density calculation with various location types (urban, suburban, rural)\n2. Verify threshold adjustments correspond to density changes\n3. Compare API call reduction before and after implementation\n4. Test with edge cases (very high/low density areas)\n5. Validate that the 15-25% API call reduction target is met",
+        "priority": "medium",
+        "dependencies": [],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 6,
+        "title": "Implement Quality-Based Early Termination",
+        "description": "Add logic to stop pagination when the average AI validation confidence score falls below 0.6, reducing costs by avoiding low-quality result pages.",
+        "details": "1. Modify the pagination logic to track validation scores\n2. Implement a rolling average calculation for confidence scores\n3. Add early termination condition based on threshold\n4. Include quality degradation detection across pages\n5. Add configuration for confidence threshold\n\nPseudo-code:\n```python\ndef search_with_early_termination(query, location, max_pages=5, confidence_threshold=0.6):\n    \"\"\"Search with early termination based on result quality\"\"\"\n    all_results = []\n    validation_scores = []\n    \n    for page in range(1, max_pages + 1):\n        # Get results for current page\n        page_results = api.search(query, location, page=page)\n        \n        # Validate results\n        validation_results = validate_results(page_results)\n        page_scores = [result['confidence'] for result in validation_results]\n        \n        # Calculate average confidence for this page\n        if page_scores:\n            avg_page_confidence = sum(page_scores) / len(page_scores)\n            validation_scores.append(avg_page_confidence)\n        else:\n            # No results on this page\n            break\n            \n        # Add valid results to collection\n        all_results.extend([r for r in validation_results if r['confidence'] > 0.5])\n        \n        # Check for early termination conditions\n        if len(validation_scores) >= 2:\n            # Check if quality is degrading\n            is_degrading = validation_scores[-1] < validation_scores[-2]\n            \n            # Calculate rolling average of last 2 pages\n            rolling_avg = sum(validation_scores[-2:]) / 2\n            \n            if rolling_avg < confidence_threshold and is_degrading:\n                logger.info(f\"Early termination at page {page}: quality below threshold\")\n                break\n                \n    return all_results\n```",
+        "testStrategy": "1. Test with queries known to have varying result quality\n2. Verify early termination occurs when confidence drops below threshold\n3. Measure API cost reduction compared to full pagination\n4. Validate that result quality is maintained despite fewer pages\n5. Test edge cases (all high quality, all low quality, mixed quality)",
+        "priority": "medium",
+        "dependencies": [],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 7,
+        "title": "Implement Batch AI Validation Processing",
+        "description": "Modify the AI validation system to process 10-20 validations per single Groq API call, reducing the number of API requests and improving validation speed.",
+        "details": "1. Refactor the validation pipeline to collect multiple items for batch processing\n2. Implement batched prompt construction for Groq API\n3. Add result parsing logic for batch responses\n4. Ensure error handling for partial batch failures\n5. Optimize batch size based on token limits\n\nPseudo-code:\n```python\nclass BatchValidator:\n    def __init__(self, groq_client, batch_size=15):\n        self.groq_client = groq_client\n        self.batch_size = batch_size\n        \n    def validate_batch(self, items):\n        \"\"\"Validate a batch of items in a single API call\"\"\"\n        # Construct batch prompt\n        prompt = self._construct_batch_prompt(items)\n        \n        # Call Groq API\n        response = self.groq_client.generate(prompt=prompt)\n        \n        # Parse batch results\n        validation_results = self._parse_batch_response(response, items)\n        return validation_results\n        \n    def _construct_batch_prompt(self, items):\n        \"\"\"Construct a prompt for batch validation\"\"\"\n        prompt = \"Validate the following business listings and provide a confidence score (0-1) for each:\\n\\n\"\n        \n        for i, item in enumerate(items):\n            prompt += f\"Item {i+1}:\\n\"\n            prompt += f\"Name: {item['name']}\\n\"\n            prompt += f\"Address: {item['address']}\\n\"\n            prompt += f\"Category: {item['category']}\\n\\n\"\n            \n        prompt += \"For each item, respond with: [item_number]:[confidence_score]:[valid/invalid]\\n\"\n        return prompt\n        \n    def _parse_batch_response(self, response, items):\n        \"\"\"Parse the batch validation response\"\"\"\n        results = []\n        lines = response.strip().split('\\n')\n        \n        for line in lines:\n            if ':' not in line:\n                continue\n                \n            parts = line.split(':')\n            if len(parts) < 3:\n                continue\n                \n            try:\n                item_num = int(parts[0].strip().replace('[', '').replace(']', '')) - 1\n                confidence = float(parts[1].strip())\n                valid = parts[2].strip().lower() == 'valid'\n                \n                if 0 <= item_num < len(items):\n                    results.append({\n                        'item': items[item_num],\n                        'confidence': confidence,\n                        'valid': valid\n                    })\n            except (ValueError, IndexError):\n                continue\n                \n        return results\n        \n    def validate_all(self, items):\n        \"\"\"Validate all items in optimal batch sizes\"\"\"\n        all_results = []\n        \n        for i in range(0, len(items), self.batch_size):\n            batch = items[i:i+self.batch_size]\n            batch_results = self.validate_batch(batch)\n            all_results.extend(batch_results)\n            \n        return all_results\n```",
+        "testStrategy": "1. Test with various batch sizes to determine optimal configuration\n2. Compare validation speed and cost before and after implementation\n3. Verify accuracy is maintained in batch processing\n4. Test error handling with intentionally malformed responses\n5. Validate that the 50-70% speed improvement and 30-40% cost reduction targets are met",
+        "priority": "high",
+        "dependencies": [],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Implement BatchValidator Class Structure",
+            "description": "Create the BatchValidator class with initialization and main validation methods to support batch processing of validations.",
+            "dependencies": [],
+            "details": "Create the BatchValidator class with constructor that accepts groq_client and configurable batch_size. Implement the validate_all method that divides items into batches and calls validate_batch for each batch. Set up the basic structure for validate_batch method that will handle a single batch of validations.\n<info added on 2025-08-02T23:39:08.791Z>\nImplemented BatchAIValidator class in services/batch_ai_validator.py with the following structure:\n\n- Constructor (__init__) that accepts groq_client, cache_manager, and configurable batch_size parameter\n- validate_all method that efficiently divides validation items into optimal batch sizes and processes them sequentially\n- validate_batch method that handles a single batch of validations with cache checking to avoid redundant API calls\n- Comprehensive error handling with try/except blocks and fallback mechanisms for API failures\n- Full integration with the cache manager to store and retrieve validation results\n- Detailed logging throughout the validation process for debugging and performance monitoring\n- Performance tracking for batch processing metrics\n\nThe implementation follows the design pattern discussed and maintains compatibility with the upcoming async validation pipeline.\n</info added on 2025-08-02T23:39:08.791Z>",
+            "status": "done",
+            "testStrategy": "Test initialization with different batch sizes. Verify that validate_all correctly divides items into batches of the specified size. Test with empty item list and single item edge cases."
+          },
+          {
+            "id": 2,
+            "title": "Implement Batch Prompt Construction",
+            "description": "Create the _construct_batch_prompt method to format multiple validation items into a single prompt for the Groq API.",
+            "dependencies": [
+              "7.1"
+            ],
+            "details": "Implement the _construct_batch_prompt method that takes a list of items and formats them into a single prompt string. Each item should be clearly numbered and formatted with its properties (name, address, category). Add clear instructions for the AI to respond in a parseable format with item number, confidence score, and validity judgment for each item.",
+            "status": "done",
+            "testStrategy": "Test prompt construction with various numbers of items. Verify the prompt format is consistent and includes all necessary information. Check that the prompt includes clear instructions for the response format."
+          },
+          {
+            "id": 3,
+            "title": "Implement Batch Response Parsing",
+            "description": "Create the _parse_batch_response method to extract individual validation results from a single batch response.",
+            "dependencies": [
+              "7.2"
+            ],
+            "details": "Implement the _parse_batch_response method that takes the AI response and original items list. Parse the response by splitting into lines and extracting item number, confidence score, and validity judgment for each item. Handle potential parsing errors and mismatches between response items and original items. Return a list of validation results with the original item, confidence score, and validity flag.",
+            "status": "done",
+            "testStrategy": "Test with various response formats including well-formed responses, partially malformed responses, and completely invalid responses. Verify correct mapping between response items and original items."
+          },
+          {
+            "id": 4,
+            "title": "Implement Complete Batch Validation Flow with Error Handling",
+            "description": "Complete the validate_batch method to handle the end-to-end batch validation process including error handling for API failures and partial batch processing.",
+            "dependencies": [
+              "7.3"
+            ],
+            "details": "Finalize the validate_batch method to call the Groq API with the constructed prompt, process the response, and handle potential errors. Implement error handling for API failures, timeout errors, and invalid responses. Add logic to retry failed batches or process partial results when possible. Include logging for validation errors and performance metrics. Optimize the batch size based on token limits and response quality.",
+            "status": "done",
+            "testStrategy": "Test end-to-end validation with real and mock API responses. Verify error handling with simulated API failures. Test with various batch sizes to determine optimal configuration. Compare validation speed and accuracy with single-item processing."
+          }
+        ]
+      },
+      {
+        "id": 8,
+        "title": "Implement Async Validation Pipeline",
+        "description": "Create an asynchronous validation pipeline to process multiple batches concurrently, further improving validation throughput.",
+        "details": "1. Refactor validation code to use async/await pattern\n2. Implement concurrent batch processing with rate limiting\n3. Add proper error handling and retries for async operations\n4. Ensure results are properly aggregated from concurrent tasks\n5. Implement backpressure mechanisms to prevent API overload\n\nPseudo-code:\n```python\nimport asyncio\nfrom aiohttp import ClientSession\n\nclass AsyncBatchValidator:\n    def __init__(self, api_key, batch_size=15, max_concurrency=3):\n        self.api_key = api_key\n        self.batch_size = batch_size\n        self.max_concurrency = max_concurrency\n        \n    async def validate_batch(self, session, items):\n        \"\"\"Validate a batch of items asynchronously\"\"\"\n        prompt = self._construct_batch_prompt(items)\n        \n        async with session.post(\n            'https://api.groq.com/v1/completions',\n            json={'prompt': prompt, 'max_tokens': 1000},\n            headers={'Authorization': f'Bearer {self.api_key}'}\n        ) as response:\n            result = await response.json()\n            return self._parse_batch_response(result['choices'][0]['text'], items)\n            \n    async def validate_all(self, items):\n        \"\"\"Validate all items with controlled concurrency\"\"\"\n        all_results = []\n        batches = [items[i:i+self.batch_size] for i in range(0, len(items), self.batch_size)]\n        \n        # Create semaphore to limit concurrency\n        semaphore = asyncio.Semaphore(self.max_concurrency)\n        \n        async with ClientSession() as session:\n            async def process_batch(batch):\n                async with semaphore:\n                    # Add exponential backoff retry logic\n                    for attempt in range(3):\n                        try:\n                            return await self.validate_batch(session, batch)\n                        except Exception as e:\n                            if attempt == 2:\n                                raise\n                            await asyncio.sleep(2 ** attempt)  # Exponential backoff\n            \n            # Create tasks for all batches\n            tasks = [process_batch(batch) for batch in batches]\n            \n            # Wait for all tasks to complete\n            batch_results = await asyncio.gather(*tasks, return_exceptions=True)\n            \n            # Process results, handling any exceptions\n            for result in batch_results:\n                if isinstance(result, Exception):\n                    # Log exception\n                    continue\n                all_results.extend(result)\n                \n        return all_results\n```",
+        "testStrategy": "1. Test concurrent validation with various batch sizes and concurrency levels\n2. Measure throughput improvements compared to synchronous processing\n3. Verify error handling and retry logic with simulated failures\n4. Test with large datasets to ensure stability\n5. Validate that results are consistent between sync and async implementations",
+        "priority": "medium",
+        "dependencies": [
+          7
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 9,
+        "title": "Add Performance Metrics Logging",
+        "description": "Implement comprehensive logging of performance metrics to track improvements and identify bottlenecks.",
+        "details": "1. Design a metrics collection system for API calls, cache operations, and validation\n2. Implement timing decorators for key functions\n3. Add structured logging for performance data\n4. Create periodic metrics aggregation\n5. Ensure minimal performance impact from metrics collection\n\nPseudo-code:\n```python\nimport time\nimport logging\nfrom functools import wraps\nfrom collections import defaultdict\n\nclass PerformanceMetrics:\n    def __init__(self):\n        self.metrics = defaultdict(list)\n        self.counters = defaultdict(int)\n        \n    def record_timing(self, category, operation, duration_ms):\n        \"\"\"Record timing for an operation\"\"\"\n        self.metrics[f\"{category}.{operation}.timing\"].append(duration_ms)\n        \n    def increment_counter(self, category, counter_name, value=1):\n        \"\"\"Increment a counter\"\"\"\n        self.counters[f\"{category}.{counter_name}\"] += value\n        \n    def get_summary(self):\n        \"\"\"Get summary statistics for all metrics\"\"\"\n        summary = {}\n        \n        # Process timing metrics\n        for key, values in self.metrics.items():\n            if values:\n                summary[f\"{key}.avg\"] = sum(values) / len(values)\n                summary[f\"{key}.min\"] = min(values)\n                summary[f\"{key}.max\"] = max(values)\n                summary[f\"{key}.count\"] = len(values)\n                \n        # Add counters\n        for key, value in self.counters.items():\n            summary[key] = value\n            \n        return summary\n        \n    def reset(self):\n        \"\"\"Reset all metrics\"\"\"\n        self.metrics.clear()\n        self.counters.clear()\n\n# Global metrics instance\nmetrics = PerformanceMetrics()\n\ndef timed(category, operation):\n    \"\"\"Decorator to time function execution\"\"\"\n    def decorator(func):\n        @wraps(func)\n        def wrapper(*args, **kwargs):\n            start_time = time.time()\n            result = func(*args, **kwargs)\n            duration_ms = (time.time() - start_time) * 1000\n            metrics.record_timing(category, operation, duration_ms)\n            return result\n        return wrapper\n    return decorator\n\n# Example usage\n@timed('api', 'search')\ndef search_api(query, location):\n    # Search implementation\n    metrics.increment_counter('api', 'search_calls')\n    pass\n\n# Periodic logging\ndef log_performance_metrics():\n    summary = metrics.get_summary()\n    logging.info(f\"Performance metrics: {summary}\")\n    metrics.reset()\n```",
+        "testStrategy": "1. Verify metrics are correctly recorded for all key operations\n2. Test impact of metrics collection on overall performance\n3. Validate accuracy of timing measurements\n4. Test metrics aggregation with various workloads\n5. Verify metrics reset functionality works correctly",
+        "priority": "medium",
+        "dependencies": [],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 10,
+        "title": "Implement Feature Flags for Gradual Rollout",
+        "description": "Create a feature flag system to enable gradual rollout of performance improvements and easy rollback if issues are detected.",
+        "details": "1. Design a simple feature flag system with runtime configuration\n2. Implement flag checking in key optimization points\n3. Add flag override capability via environment variables\n4. Create default configuration with conservative settings\n5. Document flag usage for each optimization\n\nPseudo-code:\n```python\nclass FeatureFlags:\n    def __init__(self):\n        # Default flag configuration\n        self.flags = {\n            'use_connection_reuse': True,\n            'use_batch_processing': True,\n            'use_result_caching': True,\n            'cache_ttl_seconds': 3600,  # 1 hour\n            'use_adaptive_clustering': True,\n            'use_early_termination': True,\n            'confidence_threshold': 0.6,\n            'use_batch_validation': True,\n            'validation_batch_size': 15,\n            'use_async_validation': True,\n            'max_validation_concurrency': 3\n        }\n        \n        # Override from environment variables\n        self._load_from_env()\n        \n    def _load_from_env(self):\n        \"\"\"Load flag values from environment variables\"\"\"\n        import os\n        prefix = 'MAPPER_FLAG_'\n        \n        for key in self.flags.keys():\n            env_key = f\"{prefix}{key.upper()}\"\n            if env_key in os.environ:\n                value = os.environ[env_key]\n                # Convert string to appropriate type\n                if isinstance(self.flags[key], bool):\n                    self.flags[key] = value.lower() in ('true', '1', 'yes')\n                elif isinstance(self.flags[key], int):\n                    self.flags[key] = int(value)\n                elif isinstance(self.flags[key], float):\n                    self.flags[key] = float(value)\n                else:\n                    self.flags[key] = value\n                    \n    def is_enabled(self, flag_name):\n        \"\"\"Check if a feature flag is enabled\"\"\"\n        return self.flags.get(flag_name, False)\n        \n    def get_value(self, flag_name, default=None):\n        \"\"\"Get the value of a feature flag\"\"\"\n        return self.flags.get(flag_name, default)\n        \n    def set_flag(self, flag_name, value):\n        \"\"\"Set a flag value at runtime\"\"\"\n        self.flags[flag_name] = value\n        \n# Global flags instance\nfeature_flags = FeatureFlags()\n\n# Example usage\ndef search_with_optimizations(query, location):\n    if feature_flags.is_enabled('use_result_caching'):\n        # Check cache first\n        cached_result = cache.get(query, location)\n        if cached_result:\n            return cached_result\n            \n    # Perform search\n    if feature_flags.is_enabled('use_batch_processing'):\n        result = batch_search(query, location)\n    else:\n        result = regular_search(query, location)\n        \n    return result\n```",
+        "testStrategy": "1. Test flag loading from environment variables\n2. Verify each optimization can be individually enabled/disabled\n3. Test runtime flag changes\n4. Validate default configuration works correctly\n5. Test with various flag combinations to ensure system stability",
+        "priority": "medium",
+        "dependencies": [],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 11,
+        "title": "Implement A/B Testing for Validation",
+        "description": "Create an A/B testing framework to compare the performance and accuracy of different optimization strategies.",
+        "details": "1. Design an A/B testing system for validation strategies\n2. Implement request sampling logic based on configurable percentages\n3. Add result collection and comparison functionality\n4. Create reporting for A/B test results\n5. Ensure minimal performance impact from A/B testing\n\nPseudo-code:\n```python\nimport random\nfrom collections import defaultdict\n\nclass ABTester:\n    def __init__(self):\n        self.experiments = {}\n        self.results = defaultdict(lambda: defaultdict(list))\n        \n    def register_experiment(self, name, variants, traffic_split=None):\n        \"\"\"Register an A/B test experiment\"\"\"\n        if traffic_split is None:\n            # Equal split between variants\n            traffic_split = [1.0 / len(variants)] * len(variants)\n            \n        if sum(traffic_split) != 1.0:\n            raise ValueError(\"Traffic split must sum to 1.0\")\n            \n        if len(variants) != len(traffic_split):\n            raise ValueError(\"Number of variants must match traffic split\")\n            \n        self.experiments[name] = {\n            'variants': variants,\n            'traffic_split': traffic_split,\n            'cumulative_split': [sum(traffic_split[:i+1]) for i in range(len(traffic_split))]\n        }\n        \n    def get_variant(self, experiment_name, identifier):\n        \"\"\"Get the variant for a specific request/user\"\"\"\n        if experiment_name not in self.experiments:\n            return None\n            \n        # Use identifier to deterministically select variant\n        # This ensures the same identifier always gets the same variant\n        random_val = random.Random(identifier).random()\n        \n        exp = self.experiments[experiment_name]\n        for i, threshold in enumerate(exp['cumulative_split']):\n            if random_val <= threshold:\n                return exp['variants'][i]\n                \n        # Fallback to last variant\n        return exp['variants'][-1]\n        \n    def record_result(self, experiment_name, variant, metrics):\n        \"\"\"Record result metrics for a variant\"\"\"\n        for key, value in metrics.items():\n            self.results[experiment_name][variant].append({key: value})\n            \n    def get_experiment_results(self, experiment_name):\n        \"\"\"Get aggregated results for an experiment\"\"\"\n        if experiment_name not in self.results:\n            return {}\n            \n        aggregated = {}\n        for variant, results in self.results[experiment_name].items():\n            variant_metrics = defaultdict(list)\n            \n            # Collect all values for each metric\n            for result in results:\n                for key, value in result.items():\n                    variant_metrics[key].append(value)\n                    \n            # Calculate statistics\n            variant_stats = {}\n            for key, values in variant_metrics.items():\n                if values:\n                    variant_stats[key] = {\n                        'avg': sum(values) / len(values),\n                        'min': min(values),\n                        'max': max(values),\n                        'count': len(values)\n                    }\n                    \n            aggregated[variant] = variant_stats\n            \n        return aggregated\n\n# Example usage\nab_tester = ABTester()\n\n# Register experiment\nab_tester.register_experiment(\n    'validation_batch_size',\n    variants=['small_batch', 'medium_batch', 'large_batch'],\n    traffic_split=[0.2, 0.4, 0.4]\n)\n\ndef validate_with_ab_testing(items, request_id):\n    # Get variant for this request\n    variant = ab_tester.get_variant('validation_batch_size', request_id)\n    \n    # Apply different strategies based on variant\n    start_time = time.time()\n    \n    if variant == 'small_batch':\n        batch_size = 5\n    elif variant == 'medium_batch':\n        batch_size = 15\n    else:  # large_batch\n        batch_size = 30\n        \n    results = batch_validate(items, batch_size=batch_size)\n    \n    # Record metrics\n    duration = time.time() - start_time\n    ab_tester.record_result('validation_batch_size', variant, {\n        'duration': duration,\n        'items_count': len(items),\n        'avg_confidence': sum(r['confidence'] for r in results) / len(results) if results else 0\n    })\n    \n    return results\n```",
+        "testStrategy": "1. Test variant selection consistency for the same identifier\n2. Verify traffic split works according to configuration\n3. Test results collection and aggregation\n4. Validate experiment registration with invalid parameters\n5. Test with multiple concurrent experiments",
+        "priority": "low",
+        "dependencies": [
+          7,
+          8
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 12,
+        "title": "Optimize Location Overlap Thresholds",
+        "description": "Implement logic to adjust location overlap thresholds based on initial search results to reduce redundant API calls.",
+        "details": "1. Analyze the current overlap threshold implementation\n2. Create a dynamic threshold adjustment algorithm\n3. Implement business density-based overlap calculation\n4. Add configuration for minimum and maximum overlap values\n5. Integrate with the clustering system\n\nPseudo-code:\n```python\ndef calculate_optimal_overlap(clusters, initial_results):\n    \"\"\"Calculate optimal overlap between clusters based on initial results\"\"\"\n    # Calculate average results per cluster\n    total_results = sum(len(cluster['results']) for cluster in initial_results)\n    avg_results = total_results / len(initial_results) if initial_results else 0\n    \n    # Calculate business density variance\n    densities = [len(cluster['results']) / cluster['area'] for cluster in initial_results]\n    variance = calculate_variance(densities)\n    \n    # Base overlap on density variance and average results\n    # High variance = higher overlap needed to avoid missing businesses\n    # High average results = lower overlap to avoid duplicates\n    \n    base_overlap = 0.2  # 20% default overlap\n    \n    # Adjust for variance (0-1 normalized)\n    variance_factor = min(variance / 10.0, 1.0)  # Cap at 1.0\n    \n    # Adjust for average results (inverse relationship)\n    results_factor = max(1.0 - (avg_results / 50.0), 0.0)  # Cap at 0.0\n    \n    # Calculate final overlap\n    overlap = base_overlap + (variance_factor * 0.2) - (results_factor * 0.1)\n    \n    # Ensure within bounds\n    min_overlap = 0.05  # 5% minimum\n    max_overlap = 0.4   # 40% maximum\n    overlap = max(min_overlap, min(overlap, max_overlap))\n    \n    return overlap\n\ndef adjust_cluster_overlap(clusters, initial_results):\n    \"\"\"Adjust cluster boundaries based on optimal overlap\"\"\"\n    optimal_overlap = calculate_optimal_overlap(clusters, initial_results)\n    \n    # Apply overlap to cluster boundaries\n    adjusted_clusters = []\n    for cluster in clusters:\n        # Calculate adjustment based on cluster size and optimal overlap\n        adjustment = cluster['radius'] * optimal_overlap\n        \n        # Create adjusted cluster with expanded radius\n        adjusted_cluster = {\n            'center': cluster['center'],\n            'radius': cluster['radius'] + adjustment,\n            'original_radius': cluster['radius']\n        }\n        \n        adjusted_clusters.append(adjusted_cluster)\n        \n    return adjusted_clusters\n```",
+        "testStrategy": "1. Test overlap calculation with various density patterns\n2. Verify adjustment logic with different cluster configurations\n3. Measure API call reduction compared to fixed overlap\n4. Test with edge cases (very sparse/dense areas)\n5. Validate that adjusted clusters maintain result quality",
+        "priority": "medium",
+        "dependencies": [
+          5
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 13,
+        "title": "Implement Comprehensive Error Handling and Retry Logic",
+        "description": "Enhance error handling throughout the system with intelligent retry mechanisms to improve reliability.",
+        "details": "1. Identify all API call points and error-prone operations\n2. Implement exponential backoff retry logic\n3. Add circuit breaker pattern for external services\n4. Create detailed error logging with context\n5. Implement graceful degradation for non-critical failures\n\nPseudo-code:\n```python\nimport time\nimport random\nfrom functools import wraps\n\nclass CircuitBreaker:\n    def __init__(self, failure_threshold=5, reset_timeout=30):\n        self.failure_count = 0\n        self.failure_threshold = failure_threshold\n        self.reset_timeout = reset_timeout\n        self.open_since = None\n        \n    def is_open(self):\n        \"\"\"Check if circuit breaker is open (service considered down)\"\"\"\n        if self.open_since is None:\n            return False\n            \n        # Check if reset timeout has elapsed\n        if time.time() - self.open_since > self.reset_timeout:\n            # Allow a trial call\n            return False\n            \n        return True\n        \n    def record_success(self):\n        \"\"\"Record a successful call\"\"\"\n        self.failure_count = 0\n        self.open_since = None\n        \n    def record_failure(self):\n        \"\"\"Record a failed call\"\"\"\n        self.failure_count += 1\n        \n        if self.failure_count >= self.failure_threshold and self.open_since is None:\n            # Open the circuit\n            self.open_since = time.time()\n\n# Circuit breakers for different services\ncircuit_breakers = {\n    'serper': CircuitBreaker(failure_threshold=5, reset_timeout=60),\n    'groq': CircuitBreaker(failure_threshold=3, reset_timeout=120)\n}\n\ndef with_retry(service_name, max_retries=3, base_delay=1, jitter=0.5):\n    \"\"\"Decorator for retry logic with circuit breaker\"\"\"\n    def decorator(func):\n        @wraps(func)\n        def wrapper(*args, **kwargs):\n            circuit_breaker = circuit_breakers.get(service_name)\n            \n            # Check if circuit is open\n            if circuit_breaker and circuit_breaker.is_open():\n                raise ServiceUnavailableError(f\"{service_name} service is currently unavailable\")\n                \n            last_exception = None\n            \n            for attempt in range(max_retries + 1):\n                try:\n                    result = func(*args, **kwargs)\n                    \n                    # Record success\n                    if circuit_breaker:\n                        circuit_breaker.record_success()\n                        \n                    return result\n                    \n                except (ConnectionError, TimeoutError, ServiceError) as e:\n                    last_exception = e\n                    \n                    # Record failure\n                    if circuit_breaker:\n                        circuit_breaker.record_failure()\n                        \n                    # Don't retry if this was the last attempt\n                    if attempt == max_retries:\n                        break\n                        \n                    # Calculate delay with exponential backoff and jitter\n                    delay = base_delay * (2 ** attempt)\n                    delay += random.uniform(0, jitter * delay)\n                    \n                    # Log retry attempt\n                    logging.warning(\n                        f\"Retry {attempt+1}/{max_retries} for {service_name} after {delay:.2f}s: {str(e)}\"\n                    )\n                    \n                    time.sleep(delay)\n                    \n            # If we got here, all retries failed\n            raise last_exception\n            \n        return wrapper\n    return decorator\n\n# Example usage\n@with_retry('serper', max_retries=3)\ndef search_api(query, location):\n    # API call implementation\n    pass\n```",
+        "testStrategy": "1. Test retry logic with simulated failures\n2. Verify circuit breaker functionality\n3. Test exponential backoff timing\n4. Validate error logging contains sufficient context\n5. Test system behavior under various failure scenarios",
+        "priority": "high",
+        "dependencies": [],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 14,
+        "title": "Implement Rollback Plan for Each Improvement",
+        "description": "Create a comprehensive rollback strategy for each optimization to quickly revert changes if issues are detected in production.",
+        "details": "1. Document current system behavior and performance as baseline\n2. Create rollback procedures for each optimization\n3. Implement version tracking for configuration changes\n4. Add monitoring alerts for performance degradation\n5. Create emergency rollback command/endpoint\n\nPseudo-code:\n```python\nclass RollbackManager:\n    def __init__(self):\n        self.current_version = 1\n        self.rollback_points = {}\n        self.feature_versions = {}\n        \n    def register_feature(self, feature_name, version, rollback_function):\n        \"\"\"Register a feature with its rollback function\"\"\"\n        self.feature_versions[feature_name] = version\n        \n        if version not in self.rollback_points:\n            self.rollback_points[version] = {}\n            \n        self.rollback_points[version][feature_name] = rollback_function\n        \n    def set_current_version(self, version):\n        \"\"\"Set the current system version\"\"\"\n        if version not in self.rollback_points:\n            raise ValueError(f\"Unknown version: {version}\")\n            \n        self.current_version = version\n        \n    def rollback_feature(self, feature_name):\n        \"\"\"Rollback a specific feature\"\"\"\n        version = self.feature_versions.get(feature_name)\n        if not version:\n            raise ValueError(f\"Unknown feature: {feature_name}\")\n            \n        rollback_func = self.rollback_points[version].get(feature_name)\n        if not rollback_func:\n            raise ValueError(f\"No rollback function for feature: {feature_name}\")\n            \n        # Execute rollback\n        logging.warning(f\"Rolling back feature: {feature_name} (version {version})\")\n        rollback_func()\n        \n    def rollback_to_version(self, target_version):\n        \"\"\"Rollback all features to a specific version\"\"\"\n        if target_version not in self.rollback_points:\n            raise ValueError(f\"Unknown version: {target_version}\")\n            \n        if target_version >= self.current_version:\n            raise ValueError(f\"Cannot rollback to newer/same version: {target_version}\")\n            \n        # Rollback all features added after target_version\n        for version in range(self.current_version, target_version, -1):\n            if version in self.rollback_points:\n                for feature_name, rollback_func in self.rollback_points[version].items():\n                    logging.warning(f\"Rolling back feature: {feature_name} (version {version})\")\n                    rollback_func()\n                    \n        self.current_version = target_version\n\n# Example usage\nrollback_manager = RollbackManager()\n\n# Register features with rollback functions\nrollback_manager.register_feature(\n    'connection_reuse', \n    version=1,\n    rollback_function=lambda: feature_flags.set_flag('use_connection_reuse', False)\n)\n\nrollback_manager.register_feature(\n    'result_caching', \n    version=1,\n    rollback_function=lambda: (\n        feature_flags.set_flag('use_result_caching', False),\n        cache.clear()\n    )\n)\n\n# Emergency rollback endpoint\ndef emergency_rollback(feature=None, version=None):\n    \"\"\"Emergency rollback endpoint\"\"\"\n    if feature:\n        rollback_manager.rollback_feature(feature)\n    elif version:\n        rollback_manager.rollback_to_version(int(version))\n    else:\n        # Default to rollback everything to baseline\n        rollback_manager.rollback_to_version(0)\n```",
+        "testStrategy": "1. Test feature-specific rollback functionality\n2. Verify version-based rollback works correctly\n3. Test emergency rollback endpoint\n4. Validate system state after rollback\n5. Test with various rollback scenarios",
+        "priority": "medium",
+        "dependencies": [
+          10
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 15,
+        "title": "Implement End-to-End Performance Testing",
+        "description": "Create comprehensive performance tests to validate that all optimizations meet the target improvements specified in the PRD.",
+        "details": "1. Design test scenarios covering all optimization areas\n2. Implement benchmark suite for measuring performance\n3. Create baseline measurements for comparison\n4. Add reporting for performance improvements\n5. Implement continuous performance testing\n\nPseudo-code:\n```python\nimport time\nimport statistics\nimport json\nfrom datetime import datetime\n\nclass PerformanceTester:\n    def __init__(self):\n        self.baseline = {}\n        self.results = {}\n        \n    def load_baseline(self, filename):\n        \"\"\"Load baseline performance data\"\"\"\n        try:\n            with open(filename, 'r') as f:\n                self.baseline = json.load(f)\n        except (FileNotFoundError, json.JSONDecodeError):\n            # No baseline or invalid file\n            self.baseline = {}\n            \n    def save_baseline(self, filename):\n        \"\"\"Save current results as baseline\"\"\"\n        with open(filename, 'w') as f:\n            json.dump(self.results, f, indent=2)\n            \n    def run_test(self, test_name, test_func, iterations=5):\n        \"\"\"Run a performance test multiple times\"\"\"\n        durations = []\n        errors = 0\n        \n        for i in range(iterations):\n            try:\n                start_time = time.time()\n                result = test_func()\n                duration = time.time() - start_time\n                durations.append(duration)\n            except Exception as e:\n                errors += 1\n                logging.error(f\"Test {test_name} iteration {i} failed: {str(e)}\")\n                \n        if not durations:\n            return None\n            \n        # Calculate statistics\n        stats = {\n            'min': min(durations),\n            'max': max(durations),\n            'mean': statistics.mean(durations),\n            'median': statistics.median(durations),\n            'stdev': statistics.stdev(durations) if len(durations) > 1 else 0,\n            'iterations': iterations,\n            'errors': errors,\n            'timestamp': datetime.now().isoformat()\n        }\n        \n        self.results[test_name] = stats\n        return stats\n        \n    def compare_with_baseline(self, test_name):\n        \"\"\"Compare current results with baseline\"\"\"\n        if test_name not in self.results or test_name not in self.baseline:\n            return None\n            \n        current = self.results[test_name]\n        baseline = self.baseline[test_name]\n        \n        # Calculate improvement percentages\n        improvement = {\n            'mean': (baseline['mean'] - current['mean']) / baseline['mean'] * 100,\n            'median': (baseline['median'] - current['median']) / baseline['median'] * 100,\n            'min': (baseline['min'] - current['min']) / baseline['min'] * 100,\n            'max': (baseline['max'] - current['max']) / baseline['max'] * 100\n        }\n        \n        return improvement\n        \n    def generate_report(self):\n        \"\"\"Generate a performance improvement report\"\"\"\n        report = {\n            'timestamp': datetime.now().isoformat(),\n            'tests': {}\n        }\n        \n        for test_name in self.results.keys():\n            improvement = self.compare_with_baseline(test_name)\n            \n            report['tests'][test_name] = {\n                'current': self.results[test_name],\n                'baseline': self.baseline.get(test_name),\n                'improvement': improvement\n            }\n            \n        return report\n\n# Example usage\ntester = PerformanceTester()\ntester.load_baseline('baseline.json')\n\n# Define test scenarios\ndef test_search_performance():\n    return search_api('restaurants', 'New York')\n    \ndef test_validation_performance():\n    items = get_test_items(20)\n    return batch_validate(items)\n    \n# Run tests\ntester.run_test('search_performance', test_search_performance, iterations=10)\ntester.run_test('validation_performance', test_validation_performance, iterations=10)\n\n# Generate report\nreport = tester.generate_report()\nprint(json.dumps(report, indent=2))\n\n# Save as new baseline if needed\n# tester.save_baseline('new_baseline.json')\n```",
+        "testStrategy": "1. Test with various search queries and locations\n2. Verify performance improvements match PRD targets\n3. Test with different system configurations\n4. Validate reporting accuracy\n5. Test baseline comparison functionality",
+        "priority": "high",
+        "dependencies": [
+          1,
+          2,
+          3,
+          5,
+          6,
+          7
+        ],
+        "status": "pending",
+        "subtasks": []
+      }
+    ],
+    "metadata": {
+      "created": "2025-08-02T23:29:09.257Z",
+      "updated": "2025-08-02T23:41:03.422Z",
+      "description": "Tasks for master context"
+    }
+  }
+}

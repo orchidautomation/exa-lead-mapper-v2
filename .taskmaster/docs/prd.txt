@@ -1,0 +1,68 @@
+Business Mapper API MVP Performance Improvements PRD
+
+## Project Overview
+Optimize the Business Mapper API MVP to improve speed, ensure consistent results, and reduce API costs. Focus on quick wins that can be implemented without major architectural changes.
+
+## Core Objectives
+1. Improve API response speed by 40-60%
+2. Reduce API costs by 30-50%
+3. Ensure consistent, high-quality search results
+4. Maintain backward compatibility with existing API
+
+## Functional Requirements
+
+### 1. Serper API Batch Request Optimization
+- Implement connection reuse for multiple vertical searches
+- Create true batch processing in _execute_batch_request()
+- Reduce connection overhead and latency
+- Target: 40-60% reduction in API latency
+
+### 2. Smart Search Result Caching
+- Implement in-memory caching for search results
+- Cache TTL: 1-2 hours for search results
+- Cache key: hash of vertical + location + zoom + page
+- Integrate with existing ValidationCache system
+- Target: 70-80% cache hit rate after warm-up
+
+### 3. Adaptive Location Clustering
+- Make clustering thresholds dynamic based on business density
+- Adjust overlap thresholds after initial cluster search
+- Implement business density heuristics
+- Target: 15-25% reduction in total API calls
+
+### 4. Quality-Based Early Termination
+- Add AI validation score threshold to pagination logic
+- Stop pagination when average confidence < 0.6
+- Implement quality degradation detection
+- Target: 10-20% cost reduction by avoiding low-quality pages
+
+### 5. Batch AI Validation Processing
+- Process 10-20 validations per single Groq API call
+- Implement async validation pipeline
+- Maintain validation accuracy while reducing calls
+- Target: 50-70% faster validation, 30-40% AI cost reduction
+
+## Technical Requirements
+- Python 3.11+ compatibility
+- No new external dependencies
+- Maintain existing API interface
+- Add performance metrics logging
+- Implement gradual rollout capability
+
+## Success Metrics
+- API response time: < 10 seconds for typical search
+- Cost per search: < $0.05 for standard query
+- Cache hit rate: > 70% after 24 hours
+- Error rate: < 1% increase from baseline
+- Result quality: Maintain 95%+ validation accuracy
+
+## Implementation Timeline
+- Week 1: Serper optimization + Result caching
+- Week 2: Location clustering + Early termination
+- Week 3: AI batch validation + Testing
+
+## Risk Mitigation
+- Feature flags for gradual rollout
+- Comprehensive logging for monitoring
+- Rollback plan for each improvement
+- A/B testing capability for validation
