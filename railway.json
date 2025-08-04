@@ -12,7 +12,6 @@
     "healthcheckTimeout": 10
   },
   "variables": {
-    "PYTHON_VERSION": "3.11",
-    "PORT": "8080"
+    "PYTHON_VERSION": "3.11"
   }
 }
