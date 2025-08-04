@@ -66,8 +66,7 @@ class Settings:
         if not cls.SERPER_API_KEY:
             errors.append("SERPER_API_KEY is required")
         
-        if not cls.ADMIN_KEY:
-            errors.append("ADMIN_KEY is required")
+        # ADMIN_KEY is optional - only used for admin endpoints
         
         if errors:
             raise ValueError(f"Configuration errors: {', '.join(errors)}")
