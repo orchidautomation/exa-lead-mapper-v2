@@ -139,14 +139,8 @@ def create_app():
             "output_format": "json"
         }
         """
-        # Validate API key
-        api_key = request.headers.get('X-API-Key')
-        if not api_key:
-            return jsonify({"error": "Missing API key"}), 401
-        
-        api_key_id = db_manager.validate_api_key(api_key)
-        if not api_key_id:
-            return jsonify({"error": "Invalid API key"}), 401
+        # API key validation removed - personal use only
+        api_key_id = None  # No authentication required
         
         try:
             # Parse request
@@ -359,11 +353,6 @@ def create_app():
                     "path": "/health",
                     "method": "GET",
                     "description": "Check API and service health"
-                },
-                "create_api_key": {
-                    "path": "/admin/api-keys",
-                    "method": "POST",
-                    "description": "Create new API key (admin only)"
                 }
             }
         })
