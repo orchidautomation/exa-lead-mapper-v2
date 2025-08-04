@@ -21,7 +21,6 @@ class Settings:
     # API Keys
     SERPER_API_KEY = os.getenv('SERPER_API_KEY')
     GROQ_API_KEY = os.getenv('GROQ_API_KEY')
-    ADMIN_KEY = os.getenv('ADMIN_KEY')
     
     # Database
     DATABASE_PATH = os.getenv('DATABASE_PATH', './data/mapper.db')
@@ -69,7 +68,7 @@ class Settings:
         if not cls.GROQ_API_KEY:
             errors.append("GROQ_API_KEY is required for AI-powered query expansion")
         
-        # ADMIN_KEY is optional - only used for admin endpoints
+        # No authentication required - admin endpoints are open
         
         if errors:
             raise ValueError(f"Configuration errors: {', '.join(errors)}")

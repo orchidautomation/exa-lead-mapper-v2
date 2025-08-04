@@ -43,7 +43,7 @@ def create_app():
         r"/*": {
             "origins": "*",
             "methods": ["GET", "POST", "OPTIONS"],
-            "allow_headers": ["Content-Type", "X-API-Key", "X-Admin-Key"]
+            "allow_headers": ["Content-Type", "X-API-Key"]
         }
     })
     
@@ -315,20 +315,13 @@ def create_app():
     @app.route('/admin/api-keys', methods=['POST'])
     def create_api_key():
         """
-        Create a new API key (requires admin key).
-        
-        Headers:
-        - X-Admin-Key: Admin authentication key
+        Create a new API key.
         
         JSON payload:
         {
             "description": "Description for the API key"
         }
         """
-        admin_key = request.headers.get('X-Admin-Key')
-        if not admin_key or admin_key != settings.ADMIN_KEY:
-            return jsonify({"error": "Unauthorized"}), 401
-        
         try:
             data = request.get_json() or {}
             description = data.get('description', 'API Key')

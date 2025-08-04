@@ -12,6 +12,8 @@
     "healthcheckTimeout": 10
   },
   "variables": {
-    "PYTHON_VERSION": "3.11"
+    "PYTHON_VERSION": "3.11",
+    "SERPER_API_KEY": "${{SERPER_API_KEY}}",
+    "GROQ_API_KEY": "${{GROQ_API_KEY}}"
   }
 }
