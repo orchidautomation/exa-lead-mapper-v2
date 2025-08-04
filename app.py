@@ -95,10 +95,10 @@ def create_app():
             
             # API key status
             serper_status = "configured" if settings.SERPER_API_KEY else "missing"
-            groq_status = "configured" if settings.GROQ_API_KEY else "not_required"
+            groq_status = "configured" if settings.GROQ_API_KEY else "missing"
             
             # Overall status - only fail if critical services are missing
-            if serper_status == "missing":
+            if serper_status == "missing" or groq_status == "missing":
                 overall_status = "degraded"
                 status_code = 503
             else:

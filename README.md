@@ -15,7 +15,7 @@ A powerful, AI-enhanced business search API that provides intelligent location a
 
 - Python 3.11+
 - Serper API key (for business search)
-- Groq API key (optional, for AI features)
+- Groq API key (for AI-powered query expansion)
 
 ## 🛠️ Quick Start
 
@@ -41,8 +41,8 @@ pip install -r requirements.txt
 cp .env.example .env
 
 # Edit .env with your API keys
-# Required: SERPER_API_KEY, ADMIN_KEY
-# Optional: GROQ_API_KEY (for AI features)
+# Required: SERPER_API_KEY, GROQ_API_KEY
+# Optional: ADMIN_KEY (for admin endpoints)
 ```
 
 ### 3. Run the API
@@ -201,8 +201,8 @@ Key environment variables:
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `SERPER_API_KEY` | Serper API key for search | Required |
-| `GROQ_API_KEY` | Groq API key for AI features | Optional |
-| `ADMIN_KEY` | Admin key for management | Required |
+| `GROQ_API_KEY` | Groq API key for AI features | Required |
+| `ADMIN_KEY` | Admin key for management | Optional |
 | `DEFAULT_MAX_PAGES` | Max search result pages | 3 |
 | `SEARCH_COST_SAFETY_THRESHOLD_USD` | Cost limit per search | 1.0 |
 

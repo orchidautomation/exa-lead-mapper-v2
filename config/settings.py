@@ -66,6 +66,9 @@ class Settings:
         if not cls.SERPER_API_KEY:
             errors.append("SERPER_API_KEY is required")
         
+        if not cls.GROQ_API_KEY:
+            errors.append("GROQ_API_KEY is required for AI-powered query expansion")
+        
         # ADMIN_KEY is optional - only used for admin endpoints
         
         if errors:
